@@ -817,7 +817,10 @@ class LamaFourier:
 
 def load_lama_mpe(model_path, device, use_mpe: bool = True, large_arch: bool = False) -> LamaFourier:
     model = LamaFourier(build_discriminator=False, use_mpe=use_mpe, large_arch=large_arch)
-    sd = torch.load(model_path, map_location = 'cpu')
+    try:
+        sd = torch.load(model_path, map_location = 'cpu', weights_only=True)
+    except TypeError:
+        sd = torch.load(model_path, map_location = 'cpu')
     model.generator.load_state_dict(sd['gen_state_dict'])
     if use_mpe:
         model.mpe.load_state_dict(sd['str_state_dict'])

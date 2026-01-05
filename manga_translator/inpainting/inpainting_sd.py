@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import cv2
 import os
+import gc
 import einops
 import safetensors
 import safetensors.torch
@@ -52,7 +53,7 @@ class StableDiffusionInpainter(OfflineInpainter):
         },
         'model_wd_swinv2': {
             'url': 'https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/resolve/main/model.onnx',
-            'hash': '67740df7ede9a53e50d6e29c6a5c0d6c862f1876c22545d810515bad3ae17bb1',
+            'hash': '04ec04fdf7db74b4fed7f4b52f52e04dec4dbad9e4d88d2d178f334079a29fde',
             'file': 'wd_swinv2.onnx',
         },
         'model_wd_swinv2_csv': {
@@ -68,68 +69,105 @@ class StableDiffusionInpainter(OfflineInpainter):
 
     async def _load(self, device: str):
         self.tagger = Tagger(self._get_file_path('wd_swinv2.onnx'))
-        self.model = create_model('manga_translator/inpainting/guided_ldm_inpaint9_v15.yaml').cuda()
+        use_device = device
+        if isinstance(use_device, str) and use_device.startswith('cuda') and (not torch.cuda.is_available()):
+            use_device = 'cpu'
+
+        self.model = create_model('manga_translator/inpainting/guided_ldm_inpaint9_v15.yaml').to(use_device)
         load_ldm_sd(self.model, self._get_file_path('abyssorangemix2_Hard-inpainting.safetensors'))
         hack_everything()
         self.model.eval()
-        self.device = device
-        self.model = self.model.to(device)
+        self.device = use_device
+        self.model = self.model.to(use_device)
 
     async def _unload(self):
         del self.model
 
     @torch.no_grad()
-    async def _infer(self, image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024, verbose: bool = False) -> np.ndarray:
+    async def _infer(self, image: np.ndarray, mask: np.ndarray, config, inpainting_size: int = 1024, verbose: bool = False) -> np.ndarray:
         img_original = np.copy(image)
         mask_original = np.copy(mask)
         mask_original[mask_original < 127] = 0
         mask_original[mask_original >= 127] = 1
         mask_original = mask_original[:, :, None]
 
-        height, width, c = image.shape
-        if max(image.shape[0: 2]) > inpainting_size:
-            image = resize_keep_aspect(image, inpainting_size)
-            mask = resize_keep_aspect(mask, inpainting_size)
-        pad_size = 64
-        h, w, c = image.shape
-        if h % pad_size != 0:
-            new_h = (pad_size - (h % pad_size)) + h
-        else:
-            new_h = h
-        if w % pad_size != 0:
-            new_w = (pad_size - (w % pad_size)) + w
-        else:
-            new_w = w
-        if new_h != h or new_w != w:
-            image = cv2.resize(image, (new_w, new_h), interpolation = cv2.INTER_LINEAR)
-            mask = cv2.resize(mask, (new_w, new_h), interpolation = cv2.INTER_LINEAR)
-        self.logger.info(f'Inpainting resolution: {new_w}x{new_h}')
-        tags = self.tagger.label_cv2_bgr(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-        self.logger.info(f'tags={list(tags.keys())}')
-        blacklist = set()
-        pos_prompt = ','.join([x for x in tags.keys() if x not in blacklist]).replace('_', ' ')
-        pos_prompt = 'masterpiece,best quality,' + pos_prompt
-        neg_prompt = 'worst quality, low quality, normal quality,text,text,text,text'
-        if self.device.startswith('cuda') :
-            with torch.autocast(enabled = True, device_type = 'cuda') :
-                img = self.model.img2img_inpaint(
-                    image = Image.fromarray(image),
-                    c_text = pos_prompt,
-                    uc_text = neg_prompt,
-                    mask = Image.fromarray(mask),
-                    device = self.device
+        height, width, _ = image.shape
+
+        def _run_once(img0: np.ndarray, mask0: np.ndarray, size: int) -> np.ndarray:
+            img = img0
+            m = mask0
+            if max(img.shape[0: 2]) > size:
+                img = resize_keep_aspect(img, size)
+                m = resize_keep_aspect(m, size)
+            pad_size = 64
+            h, w, _ = img.shape
+            new_h = (pad_size - (h % pad_size)) + h if h % pad_size != 0 else h
+            new_w = (pad_size - (w % pad_size)) + w if w % pad_size != 0 else w
+            if new_h != h or new_w != w:
+                img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                m = cv2.resize(m, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+
+            self.logger.info(f'Inpainting resolution: {new_w}x{new_h}')
+
+            tags = self.tagger.label_cv2_bgr(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            self.logger.info(f'tags={list(tags.keys())}')
+
+            blacklist = set()
+            pos_prompt = ','.join([x for x in tags.keys() if x not in blacklist]).replace('_', ' ')
+            pos_prompt = 'masterpiece,best quality,' + pos_prompt
+            neg_prompt = 'worst quality, low quality, normal quality,text,text,text,text'
+
+            if self.device.startswith('cuda'):
+                with torch.autocast(enabled=True, device_type='cuda'):
+                    out = self.model.img2img_inpaint(
+                        image=Image.fromarray(img),
+                        c_text=pos_prompt,
+                        uc_text=neg_prompt,
+                        mask=Image.fromarray(m),
+                        device=self.device,
                     )
-        else :
-            img = self.model.img2img_inpaint(
-                image = Image.fromarray(image),
-                c_text = pos_prompt,
-                uc_text = neg_prompt,
-                mask = Image.fromarray(mask),
-                device = self.device
+            else:
+                out = self.model.img2img_inpaint(
+                    image=Image.fromarray(img),
+                    c_text=pos_prompt,
+                    uc_text=neg_prompt,
+                    mask=Image.fromarray(m),
+                    device=self.device,
                 )
 
-        img_inpainted = (einops.rearrange(img, '1 c h w -> h w c').cpu().numpy() * 127.5 + 127.5).astype(np.uint8)
-        if new_h != height or new_w != width:
-            img_inpainted = cv2.resize(img_inpainted, (width, height), interpolation = cv2.INTER_LINEAR)
-        ans = img_inpainted * mask_original + img_original * (1 - mask_original)
-        return ans
+            img_inpainted = (einops.rearrange(out, '1 c h w -> h w c').cpu().numpy() * 127.5 + 127.5).astype(np.uint8)
+            if new_h != height or new_w != width:
+                img_inpainted = cv2.resize(img_inpainted, (width, height), interpolation=cv2.INTER_LINEAR)
+            return img_inpainted
+
+        retry_sizes = [int(inpainting_size), 1024, 768, 512]
+        seen = set()
+        retry_sizes = [s for s in retry_sizes if s > 0 and (s not in seen and not seen.add(s))]
+
+        last_oom: Exception | None = None
+        for size in retry_sizes:
+            try:
+                img_inpainted = _run_once(image, mask, size)
+                ans = img_inpainted * mask_original + img_original * (1 - mask_original)
+                return ans
+            except Exception as e:
+                oom = isinstance(e, (torch.cuda.OutOfMemoryError, getattr(torch, 'OutOfMemoryError', RuntimeError)))
+                if (not oom) or (not self.device.startswith('cuda')):
+                    raise
+
+                last_oom = e
+                try:
+                    self.logger.warning(f'CUDA OOM during SD inpainting (size={size}). Retrying with smaller inpainting_size...')
+                except Exception:
+                    pass
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                gc.collect()
+
+        raise RuntimeError(
+            'StableDiffusion inpainting failed due to CUDA out of memory. '
+            'Try lowering inpainting_size (e.g. 1024/768/512), closing other GPU programs, '
+            'or switch inpainter to lama_mpe/lama_large.'
+        ) from last_oom

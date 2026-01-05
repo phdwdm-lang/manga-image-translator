@@ -1,0 +1,8 @@
+{
+    "mode": "local",
+    "target_lang": "CHS",
+    "translator": "google",
+    "use_gpu": true,
+    "inpainter": "original",
+    "ocr": "original"
+}

@@ -112,8 +112,22 @@ class ModelMangaOCR(OfflineOCR):
             dictionary = [s[:-1] for s in fp.readlines()]
 
         self.model = OCR(dictionary, 768)
-        self.mocr = MangaOcr()
-        sd = torch.load(self._get_file_path('ocr_ar_48px.ckpt'))
+        try:
+            self.mocr = MangaOcr()
+        except ValueError as e:
+            msg = str(e)
+            if 'upgrade torch to at least v2.6' in msg or 'CVE-2025-32434' in msg:
+                raise RuntimeError(
+                    'MangaOCR (mocr) 加载失败：transformers 因 torch.load 安全限制要求 torch>=2.6。\n'
+                    '请升级 venv 内 torch 到 CUDA 版本 2.6+（建议 cu121），或在前端高级设置把 OCR 改为 48px_ctc/48px/32px 以绕过 mocr。'
+                ) from e
+            raise
+
+        ckpt_path = self._get_file_path('ocr_ar_48px.ckpt')
+        try:
+            sd = torch.load(ckpt_path, map_location='cpu', weights_only=True)
+        except TypeError:
+            sd = torch.load(ckpt_path, map_location='cpu')
         self.model.load_state_dict(sd)
         self.model.eval()
         self.device = device

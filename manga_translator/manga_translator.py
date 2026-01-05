@@ -9,6 +9,7 @@ import torch
 import logging
 import sys
 import traceback
+import inspect
 import numpy as np
 from PIL import Image
 from typing import Optional, Any, List
@@ -285,16 +286,31 @@ class MangaTranslator:
             self.batch_concurrent = False
             
         self.ignore_errors = params.get('ignore_errors', False)
-        # check mps for apple silicon or cuda for nvidia
-        device = 'mps' if torch.backends.mps.is_available() else 'cuda'
-        self.device = device if params.get('use_gpu', False) else 'cpu'
-        self._gpu_limited_memory = params.get('use_gpu_limited', False)
-        if self._gpu_limited_memory and not self.using_gpu:
-            self.device = device
-        if self.using_gpu and ( not torch.cuda.is_available() and not torch.backends.mps.is_available()):
-            raise Exception(
-                'CUDA or Metal compatible device could not be found in torch whilst --use-gpu args was set.\n'
-                'Is the correct pytorch version installed? (See https://pytorch.org/)')
+        use_gpu = params.get('use_gpu', False)
+        use_gpu_limited = params.get('use_gpu_limited', False)
+
+        has_mps = bool(getattr(torch.backends, 'mps', None)) and torch.backends.mps.is_available()
+        has_cuda = torch.cuda.is_available()
+        preferred_device = 'mps' if has_mps else ('cuda' if has_cuda else None)
+
+        self.device = 'cpu'
+        self._gpu_limited_memory = False
+
+        if use_gpu_limited:
+            if preferred_device is None:
+                logger.warning(
+                    'GPU limited memory mode was requested but no CUDA/MPS device is available; falling back to CPU.')
+            else:
+                self.device = preferred_device
+                self._gpu_limited_memory = True
+        elif use_gpu:
+            if preferred_device is None:
+                logger.warning(
+                    'CUDA or Metal compatible device could not be found in torch whilst --use-gpu args was set; '
+                    'falling back to CPU. If you want GPU acceleration, install a CUDA-enabled PyTorch build '
+                    '(See https://pytorch.org/).')
+            else:
+                self.device = preferred_device
         if params.get('model_dir'):
             ModelWrapper._MODEL_DIR = params.get('model_dir')
         #todo: fix why is kernel size loaded in the constructor
@@ -369,7 +385,9 @@ class MangaTranslator:
         await self._report_progress('running_pre_translation_hooks')
         for hook in self._progress_hooks:
             try:
-                hook('running_pre_translation_hooks', False)
+                res = hook('running_pre_translation_hooks', False)
+                if inspect.isawaitable(res):
+                    await res
             except Exception as e:
                 logger.error(f"Error in progress hook: {e}")
 
@@ -1368,12 +1386,14 @@ class MangaTranslator:
             output = ctx.img_inpainted
         # manga2eng currently only supports horizontal left to right rendering
         elif (config.render.renderer == Renderer.manga2Eng or config.render.renderer == Renderer.manga2EngPillow) and ctx.text_regions and LANGUAGE_ORIENTATION_PRESETS.get(ctx.text_regions[0].target_lang) == 'h':
+            img_canvas = ctx.img_inpainted.copy()
             if config.render.renderer == Renderer.manga2EngPillow:
-                output = await dispatch_eng_render_pillow(ctx.img_inpainted, ctx.img_rgb, ctx.text_regions, self.font_path, config.render.line_spacing)
+                output = await dispatch_eng_render_pillow(img_canvas, ctx.img_rgb, ctx.text_regions, self.font_path, config.render.line_spacing)
             else:
-                output = await dispatch_eng_render(ctx.img_inpainted, ctx.img_rgb, ctx.text_regions, self.font_path, config.render.line_spacing)
+                output = await dispatch_eng_render(img_canvas, ctx.img_rgb, ctx.text_regions, self.font_path, config.render.line_spacing)
         else:
-            output = await dispatch_rendering(ctx.img_inpainted, ctx.text_regions, self.font_path, config.render.font_size,
+            img_canvas = ctx.img_inpainted.copy()
+            output = await dispatch_rendering(img_canvas, ctx.text_regions, self.font_path, config.render.font_size,
                                               config.render.font_size_offset,
                                               config.render.font_size_minimum, not config.render.no_hyphenation, ctx.render_mask, config.render.line_spacing)
         return output

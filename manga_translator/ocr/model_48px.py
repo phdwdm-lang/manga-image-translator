@@ -49,7 +49,11 @@ class Model48pxOCR(OfflineOCR):
             dictionary = [s[:-1] for s in fp.readlines()]
 
         self.model = OCR(dictionary, 768)
-        sd = torch.load(self._get_file_path('ocr_ar_48px.ckpt'))
+        ckpt_path = self._get_file_path('ocr_ar_48px.ckpt')
+        try:
+            sd = torch.load(ckpt_path, map_location='cpu', weights_only=True)
+        except TypeError:
+            sd = torch.load(ckpt_path, map_location='cpu')
         self.model.load_state_dict(sd)
         self.model.eval()
         self.device = device

@@ -191,10 +191,18 @@ async def dispatch(textlines: List[Quadrilateral], width: int, height: int, verb
 
     text_regions: List[TextBlock] = []
     for (txtlns, fg_color, bg_color) in merge_bboxes_text_region(textlines, width, height):
-        total_logprobs = 0
+        total_logprobs = 0.0
+        total_area = 0.0
         for txtln in txtlns:
-            total_logprobs += np.log(txtln.prob) * txtln.area
-        total_logprobs /= sum([txtln.area for txtln in textlines])
+            prob = float(getattr(txtln, 'prob', 0.0))
+            prob = max(prob, 1e-6)
+            area = float(getattr(txtln, 'area', 0.0))
+            total_logprobs += float(np.log(prob)) * area
+            total_area += area
+        if total_area > 0:
+            total_logprobs /= total_area
+        else:
+            total_logprobs = float(np.log(1e-6))
 
         font_size = int(min([txtln.font_size for txtln in txtlns]))
         angle = np.rad2deg(np.mean([txtln.angle for txtln in txtlns])) - 90

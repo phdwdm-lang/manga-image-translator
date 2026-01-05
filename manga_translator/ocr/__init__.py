@@ -1,5 +1,6 @@
 import numpy as np
 from typing import List, Optional
+import torch
 from .common import CommonOCR, OfflineOCR
 from .model_32px import Model32pxOCR
 from .model_48px import Model48pxOCR
@@ -30,10 +31,26 @@ async def prepare(ocr_key: Ocr, device: str = 'cpu'):
         await ocr.download()
         await ocr.load(device)
 
-async def dispatch(ocr_key: Ocr, image: np.ndarray, regions: List[Quadrilateral], config:Optional[OcrConfig] = None, device: str = 'cpu', verbose: bool = False) -> List[Quadrilateral]:
+async def dispatch(
+    ocr_key: Ocr,
+    image: np.ndarray,
+    regions: List[Quadrilateral],
+    config: Optional[OcrConfig] = None,
+    device: str | None = None,
+    verbose: bool = False,
+):
     ocr = get_ocr(ocr_key)
-    if isinstance(ocr, OfflineOCR):
-        await ocr.load(device)
+    
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # 只要有加载功能，就强制检查加载
+    if hasattr(ocr, 'load'):
+        # 只要模型属性不存在或为空，就必须加载
+        if not hasattr(ocr, 'model') or ocr.model is None:
+            print(f"📥 [OCR] 正在加载文字识别模型 ({device})...")
+            await ocr.load(device)
+
     config = config or OcrConfig()
     return await ocr.recognize(image, regions, config, verbose)
 

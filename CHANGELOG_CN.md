@@ -1,5 +1,11 @@
 # 更新日志 (中文)
 
+### 2026-01-03
+
+1. 稳定优先：锁定并验证后端运行环境（Windows，本地部署迁移到 D:\work\project）
+2. 关键版本：Python 3.12.8；torch 2.9.1+cu126；torchvision 0.24.1+cu126；torchaudio 2.9.1+cu126；transformers 4.57.3；manga-ocr 0.1.14
+3. 已验证：GPU 可用（torch.version.cuda=12.6，torch.cuda.is_available=True）；OCR 使用 mocr 正常工作（无 fallback），并完成 200+ 页端到端翻译链路验证
+
 ### 2023-11-11
 
 1. 添加了新的OCR模型`48px`

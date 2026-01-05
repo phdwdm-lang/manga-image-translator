@@ -2,5 +2,5 @@
 
 pushd "%~dp0"
 git pull --quiet
-python -m manga_translator %*
+"%~dp0venv\Scripts\python.exe" -m manga_translator %*
 popd

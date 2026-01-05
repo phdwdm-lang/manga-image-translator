@@ -127,6 +127,7 @@ class Translator(str, Enum):
     nllb = "nllb"
     nllb_big = "nllb_big"
     sugoi = "sugoi"
+    google = "google"
     jparacrawl = "jparacrawl"
     jparacrawl_big = "jparacrawl_big"
     m2m100 = "m2m100"
@@ -215,9 +216,9 @@ class UpscaleConfig(BaseModel):
     """Image upscale ratio applied before detection. Can improve text detection."""
 
 class TranslatorConfig(BaseModel):
-    translator: Translator = Translator.sugoi
+    translator: Translator = Translator.deepseek
     """Language translator to use"""
-    target_lang: str = 'ENG' #todo: validate VALID_LANGUAGES #todo: convert to enum
+    target_lang: str = 'CHS' #todo: validate VALID_LANGUAGES #todo: convert to enum
     """Destination language"""
     no_text_lang_skip: bool = False
     """Dont skip text that is seemingly already in the target language."""
@@ -289,7 +290,7 @@ class DetectorConfig(BaseModel):
     """How much to extend text skeleton to form bounding box"""
 
 class InpainterConfig(BaseModel):
-    inpainter: Inpainter = Inpainter.lama_large
+    inpainter: Inpainter = Inpainter.lama_mpe
     """Inpainting model to use"""
     inpainting_size: int = 2048
     """Size of image used for inpainting (too large will result in OOM)"""

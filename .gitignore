@@ -48,6 +48,43 @@ MANIFEST
 /input/
 /input-translated/
 
+# Wheels
+*.whl
+
 # SSL Used for running server locally
 cert.pem
 key.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual env
+venv/
+.venv/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Project outputs / caches
+result/
+models/hf_home/
+models/**/hub/
+models/**/transformers/
+*.log
+*.tmp
+
+# Large model artifacts (optional,按需)
+*.pt
+*.pth
+*.onnx
+*.safetensors

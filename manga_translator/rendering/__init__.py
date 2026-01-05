@@ -269,57 +269,65 @@ def render(
     line_spacing,
     disable_font_border
 ):
-    fg, bg = region.get_font_colors()
-    fg, bg = fg_bg_compare(fg, bg)
+    try:
+        fg, bg = region.get_font_colors()
+        fg, bg = fg_bg_compare(fg, bg)
 
-    if disable_font_border :
-        bg = None
+        if disable_font_border:
+            bg = None
 
-    middle_pts = (dst_points[:, [1, 2, 3, 0]] + dst_points) / 2
-    norm_h = np.linalg.norm(middle_pts[:, 1] - middle_pts[:, 3], axis=1)
-    norm_v = np.linalg.norm(middle_pts[:, 2] - middle_pts[:, 0], axis=1)
-    r_orig = np.mean(norm_h / norm_v)
+        middle_pts = (dst_points[:, [1, 2, 3, 0]] + dst_points) / 2
+        norm_h = np.linalg.norm(middle_pts[:, 1] - middle_pts[:, 3], axis=1)
+        norm_v = np.linalg.norm(middle_pts[:, 2] - middle_pts[:, 0], axis=1)
+        r_orig = np.mean(norm_h / norm_v)
 
-    # If configuration is set to non-automatic mode, use configuration to determine direction directly
-    forced_direction = region._direction if hasattr(region, "_direction") else region.direction
-    if forced_direction != "auto":
-        if forced_direction in ["horizontal", "h"]:
-            render_horizontally = True
-        elif forced_direction in ["vertical", "v"]:
-            render_horizontally = False
+        # If configuration is set to non-automatic mode, use configuration to determine direction directly
+        forced_direction = region._direction if hasattr(region, "_direction") else region.direction
+        if forced_direction != "auto":
+            if forced_direction in ["horizontal", "h"]:
+                render_horizontally = True
+            elif forced_direction in ["vertical", "v"]:
+                render_horizontally = False
+            else:
+                render_horizontally = region.horizontal
         else:
             render_horizontally = region.horizontal
-    else:
-        render_horizontally = region.horizontal
 
-    #print(f"Region text: {region.text}, forced_direction: {forced_direction}, render_horizontally: {render_horizontally}")
+        #print(f"Region text: {region.text}, forced_direction: {forced_direction}, render_horizontally: {render_horizontally}")
 
-    if render_horizontally:
-        temp_box = text_render.put_text_horizontal(
-            region.font_size,
-            region.get_translation_for_rendering(),
-            round(norm_h[0]),
-            round(norm_v[0]),
-            region.alignment,
-            region.direction == 'hl',
-            fg,
-            bg,
-            region.target_lang,
-            hyphenate,
-            line_spacing,
-        )
-    else:
-        temp_box = text_render.put_text_vertical(
-            region.font_size,
-            region.get_translation_for_rendering(),
-            round(norm_v[0]),
-            region.alignment,
-            fg,
-            bg,
-            line_spacing,
-        )
-    h, w, _ = temp_box.shape
-    r_temp = w / h
+        if render_horizontally:
+            temp_box = text_render.put_text_horizontal(
+                region.font_size,
+                region.get_translation_for_rendering(),
+                round(norm_h[0]),
+                round(norm_v[0]),
+                region.alignment,
+                region.direction == 'hl',
+                fg,
+                bg,
+                region.target_lang,
+                hyphenate,
+                line_spacing,
+            )
+        else:
+            temp_box = text_render.put_text_vertical(
+                region.font_size,
+                region.get_translation_for_rendering(),
+                round(norm_v[0]),
+                region.alignment,
+                fg,
+                bg,
+                line_spacing,
+            )
+
+        if temp_box is None:
+            return img
+
+        h, w, _ = temp_box.shape
+        r_temp = w / h
+    except Exception as e:
+        logger.warning(f"Render failed for region, skipped: {e}")
+        return img
 
     # Extend temporary box so that it has same ratio as original
     box = None  
