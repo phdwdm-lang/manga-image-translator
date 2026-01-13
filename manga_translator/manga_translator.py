@@ -105,6 +105,7 @@ class MangaTranslator:
     batch_size: int
 
     def __init__(self, params: dict = None):
+        params = params or {}
         self.pre_dict = params.get('pre_dict', None)
         self.post_dict = params.get('post_dict', None)
         self.font_path = None
@@ -120,8 +121,6 @@ class MangaTranslator:
         self._progress_hooks = []
         self._add_logger_hook()
 
-        params = params or {}
-        
         self._batch_contexts = []  # 存储批量处理的上下文
         self._batch_configs = []   # 存储批量处理的配置
         self.disable_memory_optimization = params.get('disable_memory_optimization', False)

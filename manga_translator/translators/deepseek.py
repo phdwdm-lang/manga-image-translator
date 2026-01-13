@@ -1,5 +1,7 @@
 import re
 
+import os
+
 from ..config import TranslatorConfig
 
 try:
@@ -53,11 +55,12 @@ class DeepseekTranslator(CommonGPTTranslator):
         # Initialize the token counter
         self.tokenizer = deepseekTokenCounter()
 
-        self.client = openai.AsyncOpenAI(api_key=openai.api_key or DEEPSEEK_API_KEY)
+        api_key = openai.api_key or os.environ.get('DEEPSEEK_API_KEY') or DEEPSEEK_API_KEY
+        self.client = openai.AsyncOpenAI(api_key=api_key)
         if not self.client.api_key and check_openai_key:
             raise MissingAPIKeyException('DEEPSEEK_API_KEY environment variable required')
             
-        self.client.base_url = DEEPSEEK_API_BASE
+        self.client.base_url = os.environ.get('DEEPSEEK_API_BASE') or DEEPSEEK_API_BASE
         self.token_count = 0
         self.token_count_last = 0
         self.config = None
@@ -242,7 +245,7 @@ class DeepseekTranslator(CommonGPTTranslator):
         messages.append({"role": "user", "content": prompt})
 
         kwargs = {
-            'model': DEEPSEEK_MODEL,
+            'model': os.environ.get('DEEPSEEK_MODEL') or DEEPSEEK_MODEL,
             'messages': messages,
             
             # `max_tokens` only affects output token length. Set to max.
